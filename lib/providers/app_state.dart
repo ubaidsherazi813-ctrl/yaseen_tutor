@@ -63,10 +63,67 @@ class AppState extends ChangeNotifier {
     return s > 0 ? s : 0;
   }
 
+  Future<AppUser> registerWithEmail({
+    required String name,
+    required String email,
+    required String password,
+    String? avatar,
+  }) async {
+    final salt = generateSalt();
+    final chosenAvatar = avatar ?? '👦';
+    final id = await db.user.insert('users', {
+      'name': name.trim(),
+      'email': email.trim().toLowerCase(),
+      'avatar': chosenAvatar,
+      'pin_hash': hashPin(password, salt),
+      'salt': salt,
+    });
+    users = await db.loadUsers();
+    final newUser = users.firstWhere((u) => u.id == id);
+    user = newUser;
+    await prefs.setInt('last_user', newUser.id);
+    await _loadUserData();
+    tab = 0;
+    notifyListeners();
+    return newUser;
+  }
+
+  Future<String?> loginWithEmail(String email, String password) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final matched = users.where((u) => u.email.toLowerCase() == cleanEmail).toList();
+    if (matched.isEmpty) {
+      // Check username match if no email was entered
+      final byName = users.where((u) => u.name.toLowerCase() == cleanEmail).toList();
+      if (byName.isNotEmpty) {
+        final u = byName.first;
+        if (hashPin(password, u.salt) == u.pinHash) {
+          user = u;
+          await prefs.setInt('last_user', u.id);
+          await _loadUserData();
+          tab = 0;
+          notifyListeners();
+          return null;
+        }
+      }
+      return 'Yeh email registered nahi hai. Baraye meherbani pehle Sign Up karein.';
+    }
+    final u = matched.first;
+    if (hashPin(password, u.salt) != u.pinHash) {
+      return 'Ghalat Password! Baraye meherbani dobara check karein.';
+    }
+    user = u;
+    await prefs.setInt('last_user', u.id);
+    await _loadUserData();
+    tab = 0;
+    notifyListeners();
+    return null;
+  }
+
   Future<AppUser> createUser(String name, String avatar, String pin) async {
     final salt = generateSalt();
     final id = await db.user.insert('users', {
       'name': name.trim(),
+      'email': '${name.trim().toLowerCase()}@yaseen.app',
       'avatar': avatar,
       'pin_hash': hashPin(pin, salt),
       'salt': salt,
@@ -124,6 +181,20 @@ class AppState extends ChangeNotifier {
     user = users.firstWhere((x) => x.id == u.id);
     notifyListeners();
     return true;
+  }
+
+  Future<void> updateAvatar(String newAvatar) async {
+    final u = user;
+    if (u == null || u.isGuest) return;
+    await db.user.update(
+      'users',
+      {'avatar': newAvatar},
+      where: 'id = ?',
+      whereArgs: [u.id],
+    );
+    users = await db.loadUsers();
+    user = users.firstWhere((x) => x.id == u.id);
+    notifyListeners();
   }
 
   Future<void> deleteCurrentUser() async {

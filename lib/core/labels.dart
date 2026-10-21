@@ -18,4 +18,17 @@ const kindLabels = <String, String>{
 Color kindColor(String kind) => kindColors[kind] ?? Colors.grey;
 String kindLabel(String kind) => kindLabels[kind] ?? kind;
 
-const avatars = ['🧕', '👳', '🧑‍🎓', '👦', '👧', '🌙', '📖', '🕌'];
+/// Avatars with Male/Boy first as default
+const avatars = ['👦', '👨', '👳', '🧑‍🎓', '👧', '🧕', '🌙', '📖', '🕌'];
+
+const avatarLabels = <String, String>{
+  '👦': 'Boy (Larka)',
+  '👨': 'Man (Mard)',
+  '👳': 'Brother / Talib',
+  '🧑‍🎓': 'Student',
+  '👧': 'Girl (Larki)',
+  '🧕': 'Sister (Behen)',
+  '🌙': 'Crescent',
+  '📖': 'Quran',
+  '🕌': 'Masjid',
+};

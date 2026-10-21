@@ -110,10 +110,11 @@ class Topic {
 
 class AppUser {
   final int id; // 0 = guest
-  final String name, avatar, pinHash, salt;
+  final String name, email, avatar, pinHash, salt;
   AppUser({
     required this.id,
     required this.name,
+    this.email = '',
     required this.avatar,
     required this.pinHash,
     required this.salt,
@@ -124,11 +125,12 @@ class AppUser {
   factory AppUser.fromMap(Map<String, Object?> m) => AppUser(
         id: m['id'] as int,
         name: m['name'] as String,
-        avatar: (m['avatar'] as String?) ?? '🌙',
-        pinHash: m['pin_hash'] as String,
-        salt: m['salt'] as String,
+        email: (m['email'] as String?) ?? '',
+        avatar: (m['avatar'] as String?) ?? '👦',
+        pinHash: (m['pin_hash'] ?? m['password_hash'] ?? '') as String,
+        salt: (m['salt'] ?? '') as String,
       );
 
   static AppUser guest() =>
-      AppUser(id: 0, name: 'Mehmaan', avatar: '👤', pinHash: '', salt: '');
+      AppUser(id: 0, name: 'Mehmaan', email: 'guest@yaseen.app', avatar: '👤', pinHash: '', salt: '');
 }

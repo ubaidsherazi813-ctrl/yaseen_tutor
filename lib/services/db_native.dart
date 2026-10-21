@@ -69,11 +69,11 @@ class DbServiceImpl implements DbServiceBase {
 
     final userDb = await openDatabase(
       join(dir, 'yaseen_user.db'),
-      version: 1,
+      version: 2,
       onCreate: (db, v) async {
         await db.execute('''CREATE TABLE users(
           id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-          avatar TEXT, pin_hash TEXT NOT NULL, salt TEXT NOT NULL)''');
+          email TEXT, avatar TEXT, pin_hash TEXT NOT NULL, salt TEXT NOT NULL)''');
         await db.execute('''CREATE TABLE bookmarks(
           user_id INTEGER NOT NULL, ayat_id INTEGER NOT NULL,
           PRIMARY KEY(user_id, ayat_id))''');
@@ -83,6 +83,13 @@ class DbServiceImpl implements DbServiceBase {
         await db.execute('''CREATE TABLE quiz_attempts(
           id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
           score INTEGER NOT NULL, total INTEGER NOT NULL, taken_at TEXT NOT NULL)''');
+      },
+      onUpgrade: (db, oldV, newV) async {
+        if (oldV < 2) {
+          try {
+            await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
+          } catch (_) {}
+        }
       },
     );
     _user = SqfliteUserDb(userDb);

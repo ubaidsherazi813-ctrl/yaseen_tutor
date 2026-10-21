@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/labels.dart';
+import '../core/gardan_data.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../providers/app_state.dart';
+import 'gardan_modal.dart';
 
 /// Kisi lafz par tap karne se yeh sheet khulti hai.
 void showGrammarSheet(BuildContext context, Ayat ayat, int wordIndex) {
@@ -92,6 +94,48 @@ class _GrammarSheetState extends State<GrammarSheet> {
                     textAlign: TextAlign.center,
                     style: TextStyle(color: p.text2, fontSize: 12)),
               ),
+            const SizedBox(height: 8),
+            // Gardan Button
+            Builder(
+              builder: (ctx) {
+                final isVerb = w.segments.any((s) => s.kind == 'fil') ||
+                    w.mainSegment?.kind == 'fil';
+                final gardan = findGardanForWord(w.arabic, w.root);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isVerb ? const Color(0xFF0B6E4F) : p.bg,
+                      foregroundColor: isVerb ? Colors.white : p.text,
+                      elevation: isVerb ? 2 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                            color: isVerb ? Colors.transparent : p.divider),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 12),
+                    ),
+                    icon: Icon(
+                      isVerb ? Icons.menu_book_rounded : Icons.table_chart_outlined,
+                      size: 18,
+                      color: isVerb ? const Color(0xFFE0B84A) : p.primary,
+                    ),
+                    label: Text(
+                      isVerb && gardan != null
+                          ? '📖 "${gardan.name}" ki 14 Sighon ki Gardan'
+                          : isVerb
+                              ? '📖 Is Fe’l ki 14 Sighon ki Gardan'
+                              : '14 Sighon ki Gardan (Sarf Explorer)',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    onPressed: () =>
+                        showGardanModal(context, initialGardan: gardan),
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 6),
             if (w.segments.isEmpty)
               Padding(

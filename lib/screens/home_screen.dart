@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../providers/app_state.dart';
 import '../widgets/common.dart';
+import '../widgets/gardan_modal.dart';
 import 'bookmarks_screen.dart';
 import 'topics_screen.dart';
 
@@ -92,6 +93,7 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   _tile(context, Icons.menu_book, 'Ayaat', () => app.goTab(1)),
                   _tile(context, Icons.extension, 'Grammar', () => app.goTab(2)),
+                  _tile(context, Icons.table_chart_rounded, '14 Gardan', () => showGardanModal(context)),
                   _tile(context, Icons.quiz, 'Quiz', () => app.goTab(3)),
                   _tile(context, Icons.lightbulb, 'Mauzoobaat', () {
                     Navigator.of(context)
@@ -101,7 +103,6 @@ class HomeScreen extends StatelessWidget {
                     Navigator.of(context)
                         .push(MaterialPageRoute(builder: (_) => const BookmarksScreen()));
                   }),
-                  _tile(context, Icons.settings, 'Settings', () => app.goTab(4)),
                 ],
               ),
               const SizedBox(height: 12),
