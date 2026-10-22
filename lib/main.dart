@@ -8,7 +8,11 @@ import 'screens/splash_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final app = AppState();
-  await app.init();
+  try {
+    await app.init().timeout(const Duration(seconds: 4));
+  } catch (e, st) {
+    debugPrint('App init warning: $e\n$st');
+  }
   runApp(
     MultiProvider(
       providers: [
