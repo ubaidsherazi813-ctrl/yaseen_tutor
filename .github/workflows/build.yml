@@ -1,8 +1,11 @@
-name: Build APK
+name: Build & Release APK
 on:
   workflow_dispatch:
   push:
     branches: [main, master]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,3 +25,25 @@ jobs:
         with:
           name: yaseen-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: Yaseen Tutor v1.0.0 (Official Release)
+          draft: false
+          prerelease: false
+          body: |
+            ### 📱 Yaseen Tutor - Official Android APK (Release v1.0.0)
+            
+            - 📖 Surah Yaseen (83 Ayaat) with Urdu Translation & Audio Recitation
+            - 🔍 Word-by-word Grammar analysis (Ism, Fe'l, Harf, Zameer)
+            - 📊 14-Sigha Verb Conjugation Tables (Gardan for خلق، قال، جعل، وغیرہ)
+            - ⚡ Instant 1-Tap Google Sign-In & Offline user profiles
+            - 🚀 Ultra-fast zero-deadlock storage engine
+            
+            **Direct Download:** Click on `app-release.apk` below to download directly to your mobile!
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
