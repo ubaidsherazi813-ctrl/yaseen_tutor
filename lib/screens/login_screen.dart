@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/labels.dart';
 import '../core/theme.dart';
+import '../models/models.dart';
 import '../providers/app_state.dart';
+import '../widgets/google_sign_in_sheet.dart';
 import 'main_shell.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -45,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     // Pre-fill last user email if available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final last = context.read<AppState>().lastUser;
-      if (last != null && last.email.isNotEmpty) {
+      if (last != null && last.email.isNotEmpty && !last.isGuest) {
         _loginEmail.text = last.email;
       }
     });
@@ -61,6 +63,71 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _regPass.dispose();
     _regConfirmPass.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleGoogleSignInModal() async {
+    final app = context.read<AppState>();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => GoogleSignInSheet(
+        onSelected: (name, email, avatar) async {
+          Navigator.of(ctx).pop();
+          setState(() {
+            _loading = true;
+            _loginError = null;
+            _regError = null;
+          });
+          try {
+            await app.loginWithGoogle(
+              name: name,
+              email: email,
+              avatar: avatar,
+            );
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const MainShell()),
+            );
+          } catch (e) {
+            if (mounted) {
+              setState(() {
+                _loginError = 'Google Sign In error: $e';
+                _regError = 'Google Sign In error: $e';
+              });
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _loading = false);
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleQuickContinue(AppUser u) async {
+    setState(() {
+      _loading = true;
+      _loginError = null;
+    });
+    try {
+      final app = context.read<AppState>();
+      app.user = u;
+      await app.prefs.setInt('last_user', u.id);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loginError = 'Error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -283,6 +350,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   Widget _buildLoginForm(Pal p) {
+    final lastUser = context.watch<AppState>().lastUser;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -293,12 +362,90 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         ),
         const SizedBox(height: 4),
         Text(
-          'Apne email aur password se login karein',
+          'Google ya apne email password se login karein',
           style: TextStyle(fontSize: 13, color: p.text2),
         ),
         const SizedBox(height: 16),
 
         if (_loginError != null) _errorBox(_loginError!),
+
+        // Fast 1-Tap continue card for returning user
+        if (lastUser != null && lastUser.email.isNotEmpty && !lastUser.isGuest) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: p.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.primary.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: p.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: p.gold, width: 2),
+                  ),
+                  child: Text(lastUser.avatar, style: const TextStyle(fontSize: 24)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pichla Profile: ${lastUser.name}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      Text(
+                        lastUser.email,
+                        style: TextStyle(fontSize: 11, color: p.text2),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: p.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 1,
+                  ),
+                  onPressed: _loading ? null : () => _handleQuickContinue(lastUser),
+                  child: const Text('جاری رکھیں', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
+        // 1. Google Sign-In Button
+        GoogleSignInButton(
+          onPressed: _loading ? null : _handleGoogleSignInModal,
+          loading: _loading,
+        ),
+        const SizedBox(height: 14),
+
+        // Divider
+        Row(
+          children: [
+            Expanded(child: Divider(color: p.divider)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'یا پھر Email سے لاگ ان کریں',
+                style: TextStyle(fontSize: 12, color: p.text2),
+              ),
+            ),
+            Expanded(child: Divider(color: p.divider)),
+          ],
+        ),
+        const SizedBox(height: 14),
 
         // Email Field
         TextFormField(
@@ -332,7 +479,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
 
         // Login Button
         ElevatedButton(
@@ -408,12 +555,36 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         ),
         const SizedBox(height: 4),
         Text(
-          'Apna naam, email aur pasandeeda avatar muntakhab karein',
+          'Google کے ذریعے 1-Tap اکاؤنٹ بنائیں یا نیچے فارم بھریں',
           style: TextStyle(fontSize: 13, color: p.text2),
         ),
         const SizedBox(height: 14),
 
         if (_regError != null) _errorBox(_regError!),
+
+        // 1. Google Sign-Up Button at top of Register tab
+        GoogleSignInButton(
+          label: 'Google کے ساتھ 1-Tap سائن اپ کریں',
+          onPressed: _loading ? null : _handleGoogleSignInModal,
+          loading: _loading,
+        ),
+        const SizedBox(height: 14),
+
+        // Divider
+        Row(
+          children: [
+            Expanded(child: Divider(color: p.divider)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                'یا پھر فارم بھر کر اکاؤنٹ بنائیں',
+                style: TextStyle(fontSize: 12, color: p.text2),
+              ),
+            ),
+            Expanded(child: Divider(color: p.divider)),
+          ],
+        ),
+        const SizedBox(height: 14),
 
         // Avatar Selection Section
         Text(
@@ -572,7 +743,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             icon: Icons.lock_outline,
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
 
         // Register Button
         ElevatedButton(
@@ -614,6 +785,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               ),
             ),
           ],
+        ),
+
+        const SizedBox(height: 14),
+        const Divider(),
+        const SizedBox(height: 8),
+
+        // Guest Mode Button
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: p.text,
+            side: BorderSide(color: p.divider),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          icon: const Icon(Icons.person_outline, size: 18),
+          label: const Text('مہمان موڈ میں جاری رکھیں (Guest Mode)'),
+          onPressed: _loading ? null : _handleGuest,
         ),
       ],
     );

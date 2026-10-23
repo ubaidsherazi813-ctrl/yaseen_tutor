@@ -174,6 +174,91 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<AppUser> loginWithGoogle({
+    required String name,
+    required String email,
+    String? avatar,
+  }) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final cleanName = name.trim().isEmpty ? 'Google User' : name.trim();
+    final chosenAvatar = avatar ?? '👦';
+
+    // 1. Check if user already exists
+    AppUser? matched;
+    for (final u in users) {
+      if (u.email.trim().toLowerCase() == cleanEmail && cleanEmail.isNotEmpty) {
+        matched = u;
+        break;
+      }
+    }
+
+    if (matched != null) {
+      user = matched;
+      await prefs.setInt('last_user', matched.id);
+      try {
+        await _loadUserData();
+      } catch (_) {}
+      tab = 0;
+      notifyListeners();
+      return matched;
+    }
+
+    // 2. Register new user profile with Google credentials
+    final salt = generateSalt();
+    final authSecret = 'google_${DateTime.now().millisecondsSinceEpoch}';
+
+    int id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    try {
+      id = await db.user.insert('users', {
+        'name': cleanName,
+        'email': cleanEmail,
+        'avatar': chosenAvatar,
+        'pin_hash': hashPin(authSecret, salt),
+        'salt': salt,
+      });
+    } catch (e) {
+      debugPrint('Google user insert fallback: $e');
+      try {
+        id = await db.user.insert('users', {
+          'name': cleanName,
+          'avatar': chosenAvatar,
+          'pin_hash': hashPin(authSecret, salt),
+          'salt': salt,
+        });
+      } catch (_) {}
+    }
+
+    try {
+      users = await db.loadUsers();
+    } catch (_) {}
+
+    AppUser? newUser;
+    for (final u in users) {
+      if (u.id == id || (cleanEmail.isNotEmpty && u.email.trim().toLowerCase() == cleanEmail)) {
+        newUser = u;
+        break;
+      }
+    }
+
+    newUser ??= AppUser(
+      id: id > 0 ? id : 1,
+      name: cleanName,
+      email: cleanEmail,
+      avatar: chosenAvatar,
+      pinHash: hashPin(authSecret, salt),
+      salt: salt,
+    );
+
+    user = newUser;
+    await prefs.setInt('last_user', newUser.id);
+    try {
+      await _loadUserData();
+    } catch (_) {}
+    tab = 0;
+    notifyListeners();
+    return newUser;
+  }
+
   Future<AppUser> createUser(String name, String avatar, String pin) async {
     final salt = generateSalt();
     final id = await db.user.insert('users', {

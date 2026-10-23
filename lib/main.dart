@@ -9,7 +9,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final app = AppState();
   try {
-    await app.init().timeout(const Duration(seconds: 4));
+    await app.init().timeout(const Duration(seconds: 15));
   } catch (e, st) {
     debugPrint('App init warning: $e\n$st');
   }
