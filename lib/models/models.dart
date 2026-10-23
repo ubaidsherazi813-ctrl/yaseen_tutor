@@ -121,6 +121,7 @@ class AppUser {
   });
 
   bool get isGuest => id == 0;
+  String get passwordHash => pinHash;
 
   factory AppUser.fromMap(Map<String, Object?> m) => AppUser(
         id: m['id'] as int,

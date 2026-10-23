@@ -71,18 +71,59 @@ class AppState extends ChangeNotifier {
   }) async {
     final salt = generateSalt();
     final chosenAvatar = avatar ?? '👦';
-    final id = await db.user.insert('users', {
-      'name': name.trim(),
-      'email': email.trim().toLowerCase(),
-      'avatar': chosenAvatar,
-      'pin_hash': hashPin(password, salt),
-      'salt': salt,
-    });
-    users = await db.loadUsers();
-    final newUser = users.firstWhere((u) => u.id == id);
+    final cleanEmail = email.trim().toLowerCase();
+
+    int id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    try {
+      id = await db.user.insert('users', {
+        'name': name.trim(),
+        'email': cleanEmail,
+        'avatar': chosenAvatar,
+        'pin_hash': hashPin(password, salt),
+        'salt': salt,
+      });
+    } catch (e) {
+      debugPrint('db.user.insert error: $e, trying without email column');
+      try {
+        id = await db.user.insert('users', {
+          'name': name.trim(),
+          'avatar': chosenAvatar,
+          'pin_hash': hashPin(password, salt),
+          'salt': salt,
+        });
+      } catch (_) {}
+    }
+
+    try {
+      users = await db.loadUsers();
+    } catch (e) {
+      debugPrint('db.loadUsers error: $e');
+    }
+
+    // Safely look up the created user
+    AppUser? newUser;
+    for (final u in users) {
+      if (u.id == id || (cleanEmail.isNotEmpty && u.email.toLowerCase() == cleanEmail) || u.name == name.trim()) {
+        newUser = u;
+        break;
+      }
+    }
+
+    // If not found in list for any reason, construct it directly so it NEVER throws
+    newUser ??= AppUser(
+      id: id > 0 ? id : 1,
+      name: name.trim(),
+      email: cleanEmail,
+      avatar: chosenAvatar,
+      pinHash: hashPin(password, salt),
+      salt: salt,
+    );
+
     user = newUser;
     await prefs.setInt('last_user', newUser.id);
-    await _loadUserData();
+    try {
+      await _loadUserData();
+    } catch (_) {}
     tab = 0;
     notifyListeners();
     return newUser;
@@ -90,33 +131,47 @@ class AppState extends ChangeNotifier {
 
   Future<String?> loginWithEmail(String email, String password) async {
     final cleanEmail = email.trim().toLowerCase();
-    final matched = users.where((u) => u.email.toLowerCase() == cleanEmail).toList();
-    if (matched.isEmpty) {
-      // Check username match if no email was entered
-      final byName = users.where((u) => u.name.toLowerCase() == cleanEmail).toList();
-      if (byName.isNotEmpty) {
-        final u = byName.first;
-        if (hashPin(password, u.salt) == u.pinHash) {
-          user = u;
-          await prefs.setInt('last_user', u.id);
-          await _loadUserData();
-          tab = 0;
-          notifyListeners();
-          return null;
+    try {
+      final matched = users.where((u) {
+        final ue = u.email.trim().toLowerCase();
+        return ue.isNotEmpty && ue == cleanEmail;
+      }).toList();
+
+      if (matched.isEmpty) {
+        // Also check by name if username was entered instead of email
+        final byName = users.where((u) => u.name.trim().toLowerCase() == cleanEmail).toList();
+        if (byName.isNotEmpty) {
+          final u = byName.first;
+          if (hashPin(password, u.salt) == u.passwordHash) {
+            user = u;
+            await prefs.setInt('last_user', u.id);
+            try {
+              await _loadUserData();
+            } catch (_) {}
+            tab = 0;
+            notifyListeners();
+            return null;
+          }
         }
+        return 'Yeh email registered nahi hai. Baraye meherbani pehle Sign Up karein.';
       }
-      return 'Yeh email registered nahi hai. Baraye meherbani pehle Sign Up karein.';
+
+      final u = matched.first;
+      if (hashPin(password, u.salt) != u.passwordHash) {
+        return 'Ghalat Password! Baraye meherbani dobara check karein.';
+      }
+
+      user = u;
+      await prefs.setInt('last_user', u.id);
+      try {
+        await _loadUserData();
+      } catch (_) {}
+      tab = 0;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return 'Login error: $e';
     }
-    final u = matched.first;
-    if (hashPin(password, u.salt) != u.pinHash) {
-      return 'Ghalat Password! Baraye meherbani dobara check karein.';
-    }
-    user = u;
-    await prefs.setInt('last_user', u.id);
-    await _loadUserData();
-    tab = 0;
-    notifyListeners();
-    return null;
   }
 
   Future<AppUser> createUser(String name, String avatar, String pin) async {

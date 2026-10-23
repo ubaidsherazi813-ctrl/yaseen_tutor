@@ -81,18 +81,27 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       _loginError = null;
     });
 
-    final app = context.read<AppState>();
-    final err = await app.loginWithEmail(email, pass);
+    try {
+      final app = context.read<AppState>();
+      final err = await app.loginWithEmail(email, pass).timeout(const Duration(seconds: 8));
 
-    if (!mounted) return;
-    setState(() => _loading = false);
+      if (!mounted) return;
 
-    if (err == null) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
-    } else {
-      setState(() => _loginError = err);
+      if (err == null) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const MainShell()),
+        );
+      } else {
+        setState(() => _loginError = err);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loginError = 'Login error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -124,30 +133,48 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       _regError = null;
     });
 
-    final app = context.read<AppState>();
+    try {
+      final app = context.read<AppState>();
 
-    // Check if email already registered
-    if (app.users.any((u) => u.email.toLowerCase() == email.toLowerCase())) {
-      setState(() {
-        _loading = false;
-        _regError = 'Yeh email pehle se registered hai! Login tab mein jayen.';
+      // Check if email already registered safely
+      final cleanEmail = email.toLowerCase();
+      final already = app.users.any((u) {
+        final ue = u.email.trim().toLowerCase();
+        return ue.isNotEmpty && ue == cleanEmail;
       });
-      return;
+
+      if (already) {
+        setState(() {
+          _loading = false;
+          _regError = 'Yeh email pehle se registered hai! Login tab mein jayen.';
+        });
+        return;
+      }
+
+      await app.registerWithEmail(
+        name: name,
+        email: email,
+        password: pass,
+        avatar: _selectedAvatar,
+      ).timeout(const Duration(seconds: 8));
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+    } catch (e, st) {
+      debugPrint('Registration error: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _regError = 'Account banane mein masla aaya: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
-
-    await app.registerWithEmail(
-      name: name,
-      email: email,
-      password: pass,
-      avatar: _selectedAvatar,
-    );
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-    );
   }
 
   Future<void> _handleGuest() async {

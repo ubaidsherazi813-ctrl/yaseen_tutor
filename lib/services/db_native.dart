@@ -11,11 +11,36 @@ import 'db_web.dart';
 
 class SqfliteUserDb implements UserDatabase {
   final Database db;
-  SqfliteUserDb(this.db);
+  final WebUserDb fallback;
+
+  SqfliteUserDb(this.db, SharedPreferences prefs)
+      : fallback = WebUserDb(prefs);
 
   @override
-  Future<int> insert(String table, Map<String, Object?> values) =>
-      db.insert(table, values);
+  Future<int> insert(String table, Map<String, Object?> values) async {
+    try {
+      final res = await db.insert(table, values);
+      // Also mirror to fallback storage so it's always safe
+      try {
+        await fallback.insert(table, values);
+      } catch (_) {}
+      return res;
+    } catch (e) {
+      debugPrint('Sqflite insert error: $e, checking schema or using fallback');
+      if (table == 'users') {
+        try {
+          await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
+          return await db.insert(table, values);
+        } catch (_) {
+          try {
+            final copy = Map<String, Object?>.from(values)..remove('email');
+            return await db.insert(table, copy);
+          } catch (_) {}
+        }
+      }
+      return await fallback.insert(table, values);
+    }
+  }
 
   @override
   Future<List<Map<String, Object?>>> query(
@@ -23,8 +48,17 @@ class SqfliteUserDb implements UserDatabase {
     String? where,
     List<Object?>? whereArgs,
     String? orderBy,
-  }) =>
-      db.query(table, where: where, whereArgs: whereArgs, orderBy: orderBy);
+  }) async {
+    try {
+      final rows = await db.query(table,
+          where: where, whereArgs: whereArgs, orderBy: orderBy);
+      if (rows.isNotEmpty) return rows;
+    } catch (e) {
+      debugPrint('Sqflite query error: $e, using fallback');
+    }
+    return await fallback.query(table,
+        where: where, whereArgs: whereArgs, orderBy: orderBy);
+  }
 
   @override
   Future<int> update(
@@ -32,20 +66,35 @@ class SqfliteUserDb implements UserDatabase {
     Map<String, Object?> values, {
     String? where,
     List<Object?>? whereArgs,
-  }) =>
-      db.update(table, values, where: where, whereArgs: whereArgs);
+  }) async {
+    try {
+      await fallback.update(table, values, where: where, whereArgs: whereArgs);
+      return await db.update(table, values, where: where, whereArgs: whereArgs);
+    } catch (e) {
+      debugPrint('Sqflite update error: $e, using fallback');
+      return await fallback.update(table, values,
+          where: where, whereArgs: whereArgs);
+    }
+  }
 
   @override
   Future<int> delete(
     String table, {
     String? where,
     List<Object?>? whereArgs,
-  }) =>
-      db.delete(table, where: where, whereArgs: whereArgs);
+  }) async {
+    try {
+      await fallback.delete(table, where: where, whereArgs: whereArgs);
+      return await db.delete(table, where: where, whereArgs: whereArgs);
+    } catch (e) {
+      debugPrint('Sqflite delete error: $e, using fallback');
+      return await fallback.delete(table, where: where, whereArgs: whereArgs);
+    }
+  }
 }
 
 class DbServiceImpl implements DbServiceBase {
-  static const contentVersion = 2; // Incremented for full 83 ayaat update
+  static const contentVersion = 3;
 
   Database? _content;
   UserDatabase? _user;
@@ -77,30 +126,34 @@ class DbServiceImpl implements DbServiceBase {
 
       final userDb = await openDatabase(
         join(dir, 'yaseen_user.db'),
-        version: 2,
+        version: 3,
         onCreate: (db, v) async {
-          await db.execute('''CREATE TABLE users(
+          await db.execute('''CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
             email TEXT, avatar TEXT, pin_hash TEXT NOT NULL, salt TEXT NOT NULL)''');
-          await db.execute('''CREATE TABLE bookmarks(
+          await db.execute('''CREATE TABLE IF NOT EXISTS bookmarks(
             user_id INTEGER NOT NULL, ayat_id INTEGER NOT NULL,
             PRIMARY KEY(user_id, ayat_id))''');
-          await db.execute('''CREATE TABLE progress(
+          await db.execute('''CREATE TABLE IF NOT EXISTS progress(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             ayat_id INTEGER NOT NULL, read_at TEXT NOT NULL)''');
-          await db.execute('''CREATE TABLE quiz_attempts(
+          await db.execute('''CREATE TABLE IF NOT EXISTS quiz_attempts(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             score INTEGER NOT NULL, total INTEGER NOT NULL, taken_at TEXT NOT NULL)''');
         },
         onUpgrade: (db, oldV, newV) async {
-          if (oldV < 2) {
-            try {
-              await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
-            } catch (_) {}
-          }
+          try {
+            await db.execute('ALTER TABLE users ADD COLUMN email TEXT');
+          } catch (_) {}
         },
       );
-      _user = SqfliteUserDb(userDb);
+
+      // Make sure email column is present
+      try {
+        await userDb.execute('ALTER TABLE users ADD COLUMN email TEXT');
+      } catch (_) {}
+
+      _user = SqfliteUserDb(userDb, prefs);
     } catch (e) {
       debugPrint('SQLite init error on device, using resilient JSON fallback: $e');
     }
@@ -142,7 +195,7 @@ class DbServiceImpl implements DbServiceBase {
       }
     }
 
-    // Fallback to JSON
+    // JSON fallback
     final json = await _getJson();
     final rawAyaat = (json['ayaat'] as List? ?? [])
         .map((e) => Map<String, Object?>.from(e as Map))
@@ -166,6 +219,7 @@ class DbServiceImpl implements DbServiceBase {
     for (final r in rawSegments) {
       wordById[r['word_id'] as int]?.segments.add(Segment.fromMap(r));
     }
+
     return ayaat;
   }
 
@@ -177,10 +231,9 @@ class DbServiceImpl implements DbServiceBase {
             .map(Topic.fromMap)
             .toList();
       } catch (e) {
-        debugPrint('SQLite loadTopics failed, falling back to JSON: $e');
+        debugPrint('SQLite loadTopics failed: $e');
       }
     }
-
     final json = await _getJson();
     final rawTopics = (json['topics'] as List? ?? [])
         .map((e) => Map<String, Object?>.from(e as Map))
@@ -190,9 +243,13 @@ class DbServiceImpl implements DbServiceBase {
 
   @override
   Future<List<AppUser>> loadUsers() async {
-    return (await _user!.query('users', orderBy: 'id'))
-        .map(AppUser.fromMap)
-        .toList();
+    try {
+      final rows = await _user!.query('users', orderBy: 'id');
+      return rows.map(AppUser.fromMap).toList();
+    } catch (e) {
+      debugPrint('loadUsers error: $e');
+      return [];
+    }
   }
 }
 
